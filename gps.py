@@ -84,6 +84,7 @@ def parse_csv_row(x):
         mapping = {
             'LATITUDE N/S': 'latitude',
             'LONGITUDE E/W': 'longitude',
+            'HEADING': 'direction',
             'HEIGHT': 'altitude(m)'
         }
         result = map_dict(x, mapping)
@@ -218,6 +219,20 @@ if __name__ == '__main__':
                     print('date: %s\nlat: %s\nlong: %s\nalt: %s' % (loc['time'], loc['latitude'], loc['longitude'], loc['altitude(m)']))
                     print('wiki: {{location|%s|%s}}' % (loc['latitude'], loc['longitude']))
                     print('-' * 30)
+                elif loc['latitude'][-1] in ['N', 'S'] and loc['longitude'][-1] in ['W', 'E']:
+                    ## Columbus have proper Ref data in CSV that indicate North/South East/West
+                    lat_ref = loc['latitude'][-1]
+                    long_ref = loc['longitude'][-1]
+                    call([
+                        'exiftool',
+                        '-m',
+                        '-GPSLatitude=%s' % loc['latitude'],
+                        '-GPSLatitudeRef=%s' % lat_ref,
+                        '-GPSLongitude=%s' % loc['longitude'],
+                        '-GPSLongitudeRef=%s' % long_ref,
+                        '-GPSAltitude*=%s' % loc['altitude(m)'],
+                        filename
+                    ])
                 else:
                     call([
                         'exiftool',
