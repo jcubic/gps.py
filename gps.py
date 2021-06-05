@@ -157,7 +157,7 @@ if __name__ == '__main__':
             else:
                 loc = get_gps_csv(csv_data, date)
                 diff = time_diff(dateutil.parser.parse(loc['date time']), date)
-            if diff > 1:
+            if False and diff > 1:
                 print(args[0])
                 print("diff %.2f hours" % diff)
                 print("SKIP")
@@ -171,8 +171,8 @@ if __name__ == '__main__':
                 call([
                     'exiftool',
                     '-m',
-                    '-GPSLatitude=%s' % loc['latitude'],
-                    '-GPSLongitude=%s' % loc['longitude'],
-                    '-GPSAltitude=%s' % loc['altitude(m)'],
+                    '-GPSLatitude*=%s' % loc['latitude'],
+                    '-GPSLongitude*=%s' % loc['longitude'],
+                    '-GPSAltitude*=%s' % loc['altitude(m)'],
                     args[0]
                 ])
