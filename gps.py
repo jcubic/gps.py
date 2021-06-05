@@ -153,7 +153,7 @@ if __name__ == '__main__':
     opt.add_option('', '--directory')
     opt.add_option('-d', '--display', action="store_true")
     (options, args) = opt.parse_args()
-    if (options.location is None and options.directory is None) or len(args) != 1:
+    if (options.location is None and options.directory is None) or len(args) == 0:
         print("This script can be used to add GPS coordinate from google takeout")
         print("or csv file from GPS logger android app to image")
         print()
@@ -163,66 +163,67 @@ if __name__ == '__main__':
               "cases when you have image in same place but different day that" +
               " don't have location file")
     else:
-        if options.ref is not None:
-            input_file = options.ref
-        else:
-            input_file = args[0]
-        date = get_date_taken(input_file)
-        print(date)
-        if options.format is None or options.format == 'google':
-            gps_list = json.loads(open(options.location).read())
+        for filename in args:
+            if options.ref is not None:
+                input_file = options.ref
+            else:
+                input_file = filename
+            date = get_date_taken(input_file)
+            print(date)
+            if options.format is None or options.format == 'google':
+                gps_list = json.loads(open(options.location).read())
 
-            if options.shift is not None:
-                loc = get_gps(gps_list, date, -float(options.shift))
-            else:
-                loc = get_gps(gps_list, date)
-            found = datetime.fromtimestamp(
-                int(loc['timestampMs']) / 1000.0
-            )
-            lat = str(int(loc['latitudeE7']) / 1e7)
-            lng = str(int(loc['longitudeE7']) / 1e7)
-            if options.location is not None:
-                print('lat: %s\nlong: %s' % (lat, lng))
-            else:
-                call([
-                    'exiftool',
-                    '-m',
-                    '-GPSLatitude=%s' % lat,
-                    '-GPSLongitude=%s' % lng,
-                    args[0]
-                ])
-        elif options.format == 'csv':
-            import csv
-            if options.directory is not None:
-                csv_data = parse_csv(get_combo_file(options.directory))
-            else:
-                with open(options.location, 'rt') as csvfile:
-                    csv_data = parse_csv(csvfile)
+                if options.shift is not None:
+                    loc = get_gps(gps_list, date, -float(options.shift))
+                else:
+                    loc = get_gps(gps_list, date)
+                found = datetime.fromtimestamp(
+                    int(loc['timestampMs']) / 1000.0
+                )
+                lat = str(int(loc['latitudeE7']) / 1e7)
+                lng = str(int(loc['longitudeE7']) / 1e7)
+                if options.location is not None:
+                    print('lat: %s\nlong: %s' % (lat, lng))
+                else:
+                    call([
+                        'exiftool',
+                        '-m',
+                        '-GPSLatitude=%s' % lat,
+                        '-GPSLongitude=%s' % lng,
+                        filename
+                    ])
+            elif options.format == 'csv':
+                import csv
+                if options.directory is not None:
+                    csv_data = parse_csv(get_combo_file(options.directory))
+                else:
+                    with open(options.location, 'rt') as csvfile:
+                        csv_data = parse_csv(csvfile)
 
-            if options.shift is not None:
-                shift = -float(options.shift)
-                loc = get_gps_csv(csv_data, date, hours_shift = shift)
-                diff = time_diff(loc['time'], date)
-                diff = diff - shift
-            else:
-                loc = get_gps_csv(csv_data, date)
-                diff = time_diff(loc['time'], date)
-            if False and diff > 1:
-                print(args[0])
-                print("diff %.2f hours" % diff)
-                print("SKIP")
-            elif options.display: ## debug option
-                print(args[0])
-                print("diff %.2f hours" % diff)
-                print('date: %s\nlat: %s\nlong: %s\nalt: %s' % (loc['time'], loc['latitude'], loc['longitude'], loc['altitude(m)']))
-                print('wiki: {{location|%s|%s}}' % (loc['latitude'], loc['longitude']))
-                print('-' * 30)
-            else:
-                call([
-                    'exiftool',
-                    '-m',
-                    '-GPSLatitude*=%s' % loc['latitude'],
-                    '-GPSLongitude*=%s' % loc['longitude'],
-                    '-GPSAltitude*=%s' % loc['altitude(m)'],
-                    args[0]
-                ])
+                if options.shift is not None:
+                    shift = -float(options.shift)
+                    loc = get_gps_csv(csv_data, date, hours_shift = shift)
+                    diff = time_diff(loc['time'], date)
+                    diff = diff - shift
+                else:
+                    loc = get_gps_csv(csv_data, date)
+                    diff = time_diff(loc['time'], date)
+                if False and diff > 1:
+                    print(filename)
+                    print("diff %.2f hours" % diff)
+                    print("SKIP")
+                elif options.display: ## debug option
+                    print(filename)
+                    print("diff %.2f hours" % diff)
+                    print('date: %s\nlat: %s\nlong: %s\nalt: %s' % (loc['time'], loc['latitude'], loc['longitude'], loc['altitude(m)']))
+                    print('wiki: {{location|%s|%s}}' % (loc['latitude'], loc['longitude']))
+                    print('-' * 30)
+                else:
+                    call([
+                        'exiftool',
+                        '-m',
+                        '-GPSLatitude*=%s' % loc['latitude'],
+                        '-GPSLongitude*=%s' % loc['longitude'],
+                        '-GPSAltitude*=%s' % loc['altitude(m)'],
+                        filename
+                    ])
