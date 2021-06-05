@@ -7,16 +7,26 @@ from dateutil import parser
 from optparse import OptionParser
 from subprocess import call
 from datetime import datetime, timedelta
+from os import listdir
+from os.path import isfile, join
+from io import StringIO
+from datetime import datetime
+
 import dateutil
+import time
 
 def get_date_taken(path):
-    return Image.open(path)._getexif()[36867]
+    """Return date from Photo EXIF data."""
+    return parse_date(Image.open(path)._getexif()[36867])
 
 def parse_date(str):
+    """Parses string as date in EXIF format."""
     return datetime.strptime(str, "%Y:%m:%d %H:%M:%S")
 
-
 def get_gps_google(gps, date, hours_shift = None):
+    """Find single row in data based on Google GPS location.
+
+    You can get GPS data for you Andorid phone in Google takeout."""
     def nearest(items, pivot):
         return min(items, key=lambda x: abs(x - pivot))
     def comparator(date, hours_shift = None):
@@ -36,6 +46,12 @@ def get_gps_google(gps, date, hours_shift = None):
     return min(gps['locations'], key=comparator(date, hours_shift))
 
 def get_gps_csv(data, date, hours_shift = None):
+    """find single row in CSV data
+
+    it always return row that have the minimum difference for a given date.
+    hours_shift is used when camera have timezone and CSV doesn't
+    The shift should take into account the time saving and modify the shift
+    accordinly."""
     def comparator(date, hours_shift):
         def compare(x):
             current = x['time']
@@ -48,21 +64,40 @@ def get_gps_csv(data, date, hours_shift = None):
         return compare
     return min(data, key=comparator(date, hours_shift))
 
+def map_dict(x, d):
+    """function return new dictionary based on x but keys are renamed based on d mapping"""
+    return dict((d[k],x[k]) for k in d.keys() if k in x)
 
 def parse_csv_row(x):
-    time = dateutil.parser.parse(x['date time'])
-    result = dict((k,x[k]) for k in ('latitude','longitude','altitude(m)', 'date time') if k in x)
-    result['time'] = time
-    return result
-    
-from os import listdir
-from os.path import isfile, join
-from io import StringIO
-from datetime import datetime
-import time
+    """Function return proper parser for CSV row from csv.DictReader.
 
+    it use sample row to detect what function to return."""
+    def gps_logger(x):
+        """Adroid GPS logger application CSV files"""
+        time = dateutil.parser.parse(x['date time'])
+        result = dict((k,x[k]) for k in ('latitude', 'longitude', 'altitude(m)') if k in x)
+        result['time'] = time
+        return result
+    def gps_columbus(x):
+        """Hardware GPS logger Columbus V-1000"""
+        time = dateutil.parser.parse(as_date(x['DATE'], x['TIME']))
+        mapping = {
+            'LATITUDE N/S': 'latitude',
+            'LONGITUDE E/W': 'longitude',
+            'HEIGHT': 'altitude(m)'
+        }
+        result = map_dict(x, mapping)
+        result['time'] = time
+        return result
+    if 'INDEX' in x and 'TAG' in x:
+        return gps_columbus
+    elif 'type' in x and 'date time' in x:
+        return gps_logger
+    else:
+        raise Exception('unrecognized CSV format')
 
 def get_files(dirname):
+    """return all filenames from directory."""
     files = []
     for f in listdir(dirname):
         path = join(dirname, f)
@@ -71,6 +106,9 @@ def get_files(dirname):
     return files
 
 def get_combo_file(dirname):
+    """Create fake file with content of directory that contain text files.
+
+    This function can be used to get all csv files as single StringIO file."""
     output = []
     for filename in get_files(dirname):
         with open(filename) as f:
@@ -79,18 +117,30 @@ def get_combo_file(dirname):
               output.append(content[0])
           output = output + content[1:]
     return StringIO("\n".join(output))
-          
-    
+
 def parse_csv(csvfile):
-    reader = csv.DictReader(csvfile)
-    return [ parse_csv_row(row) for row in reader ]
+    """detect and parse CSV file."""
+    input_list = list(csv.DictReader(csvfile))
+    fn = parse_csv_row(input_list[0])
+    return [ fn(row) for row in input_list ]
 
 def time_diff(d1, d2):
+    """calculate time difference between two date times."""
     d1_ts = time.mktime(d1.timetuple())
     d2_ts = time.mktime(d2.timetuple())
     return abs(int(d2_ts-d1_ts)) / 60 / 60
 
+def format_number(number, separator):
+    """function convert number in CSV format of Columbus V-1000 GPS logger"""
+    string = str(number)
+    if len(string) % 2 != 0:
+        raise Exception("Invalid number %s" % number)
+    size = int(len(string) / 2)
+    return separator.join([ string[x*2:(x*2)+2] for x in range(size) ])
 
+def as_date(date, time):
+    """Convert date and time into proper date-time string"""
+    return " ".join(["20%s" % format_number(date, "-"), format_number(time, ":")])
 
 if __name__ == '__main__':
     from sys import argv
@@ -107,7 +157,7 @@ if __name__ == '__main__':
         print("This script can be used to add GPS coordinate from google takeout")
         print("or csv file from GPS logger android app to image")
         print()
-        print("usage %s [--format google | csv] [--shift <hours shift>] [--ref refence image] --location [History JSON File] <IMAGE FILE>" % argv[0])
+        print("usage %s [--format google | csv] [--shift <hours shift>] [--ref refence image] --location [History JSON or CSV File] <IMAGE FILE>" % argv[0])
         print("--shift daytime saving -1 for summer use in quotes")
         print("--ref image used as reference that is located in GPS file for " +
               "cases when you have image in same place but different day that" +
@@ -117,11 +167,11 @@ if __name__ == '__main__':
             input_file = options.ref
         else:
             input_file = args[0]
-        date = parse_date(get_date_taken(input_file))
+        date = get_date_taken(input_file)
         print(date)
         if options.format is None or options.format == 'google':
             gps_list = json.loads(open(options.location).read())
-            
+
             if options.shift is not None:
                 loc = get_gps(gps_list, date, -float(options.shift))
             else:
@@ -148,23 +198,23 @@ if __name__ == '__main__':
             else:
                 with open(options.location, 'rt') as csvfile:
                     csv_data = parse_csv(csvfile)
-            
+
             if options.shift is not None:
                 shift = -float(options.shift)
                 loc = get_gps_csv(csv_data, date, hours_shift = shift)
-                diff = time_diff(dateutil.parser.parse(loc['date time']), date)
+                diff = time_diff(loc['time'], date)
                 diff = diff - shift
             else:
                 loc = get_gps_csv(csv_data, date)
-                diff = time_diff(dateutil.parser.parse(loc['date time']), date)
+                diff = time_diff(loc['time'], date)
             if False and diff > 1:
                 print(args[0])
                 print("diff %.2f hours" % diff)
                 print("SKIP")
-            elif options.display:
+            elif options.display: ## debug option
                 print(args[0])
                 print("diff %.2f hours" % diff)
-                print('date: %s\nlat: %s\nlong: %s\nalt: %s' % (loc['date time'], loc['latitude'], loc['longitude'], loc['altitude(m)']))
+                print('date: %s\nlat: %s\nlong: %s\nalt: %s' % (loc['time'], loc['latitude'], loc['longitude'], loc['altitude(m)']))
                 print('wiki: {{location|%s|%s}}' % (loc['latitude'], loc['longitude']))
                 print('-' * 30)
             else:
