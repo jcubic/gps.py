@@ -175,9 +175,9 @@ if __name__ == '__main__':
                 gps_list = json.loads(open(options.location).read())
 
                 if options.shift is not None:
-                    loc = get_gps(gps_list, date, -float(options.shift))
+                    loc = get_gps_google(gps_list, date, -float(options.shift))
                 else:
-                    loc = get_gps(gps_list, date)
+                    loc = get_gps_google(gps_list, date)
                 found = datetime.fromtimestamp(
                     int(loc['timestampMs']) / 1000.0
                 )
